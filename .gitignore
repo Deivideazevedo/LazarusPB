@@ -1,0 +1,13 @@
+# Codigo-fonte extraido: versionado pelo .git interno de codigo_fonte
+# (repo dedicado ao projeto PowerBuilder legado), nao pelo repo da ferramenta.
+codigo_fonte/
+
+# PBLs recriados (gerados pela compilacao)
+compilacao/
+
+# Estado interno da ferramenta
+scripts/hashes.json
+
+# Logs e cache Python
+logs/
+__pycache__/
