@@ -184,8 +184,27 @@ python "C:\Users\Elton\Desktop\LazarusIA\scripts\extrair.py" "G:\sdo\programa\el
 > O nome é resolvido contra a `"origem"` (com ou sem `.pbl`). Caminho completo
 > também funciona.
 
+### Limpeza automática de órfãos (padrão)
+
+Antes de extrair, o script **remove todos os `.sr*` existentes** na pasta
+destino. Isso garante que arquivos removidos do PBL original não fiquem como
+"órfãos" — objetos que não existem mais mas continuam sendo compilados,
+gerando falsos positivos no `compilar.py` e no `validar.py`.
+
+Para **desativar** a limpeza (manter comportamento anterior), use `--nao-limpar`:
+
+```bat
+"C:\Users\Elton\Desktop\LazarusIA\extrair.bat" --nao-limpar deivide
+```
+
+> Arquivos que não são `.sr*` (`.txt`, `.md`, notas) não são afetados pela limpeza.
+
 ### Resultado esperado
 ```
+    Limpando 3 .sr* antigo(s) em C:\...\codigo_fonte\deivide
+      - w_tab_oso_pref.srw
+      - d_tab_obo_antigo.srd
+      - f_unused.srf
 ==> Extraindo [G:\sdo\programa\deivide.pbl] -> C:\Users\Elton\Desktop\LazarusIA\codigo_fonte\deivide
     Objetos de fonte extraidos: 20
 Extracao concluida: 20 objeto(s) em 1 PBL(s).
@@ -313,6 +332,11 @@ Os dois atalhos aceitam nomes ou caminhos para processar só alguns PBLs:
 
 > No `extrair`, o nome é resolvido contra a `"origem"` do config.json.
 > O `validar.bat` aceita o mesmo: `validar.bat deivide`.
+>
+> Para extrair **sem** limpar órfãos anteriores:
+> ```bat
+> "C:\Users\Elton\Desktop\LazarusIA\extrair.bat" --nao-limpar deivide
+> ```
 
 > `extrair.bat` só **lê** as `.pbl` originais. `compilar.bat` só **escreve** em
 > `compilacao\`. Nenhum dos dois modifica as bibliotecas originais.

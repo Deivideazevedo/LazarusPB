@@ -10,6 +10,14 @@ Uso (chame sempre com o caminho completo, de qualquer pasta):
     ...\extrair.py "F:\sdo\programa\elton.pbl"
         # Extrai tambem/apenas este PBL informado na linha de comando.
 
+    ...\extrair.py --nao-limpar deivide
+        # Nao remove .sr* existentes antes de extrair (comportamento antigo).
+
+Por padrao, antes de extrair o script REMOVE todos os .sr* da pasta destino,
+garantindo que arquivos removidos do PBL original nao fiquem como orfaos.
+Use --nao-limpar para manter arquivos existentes (sobrescreve apenas os
+que o PBL ainda contem).
+
 Saida:
     LazarusIA\codigo_fonte\<nome_da_pbl>\*.sr*
     LazarusIA\scripts\hashes.json   <- hash SHA-256 de cada objeto (chave = pbl\nome)
@@ -46,12 +54,38 @@ def carregar_pbls(args):
     return pbls
 
 
-def extrair_pbl(pbl):
+def limpar_pasta(destino):
+    """Remove todos os .sr* da pasta destino antes de extrair.
+
+    Devolve a lista de nomes de arquivos removidos.
+    """
+    removidos = []
+    if not os.path.isdir(destino):
+        return removidos
+    for f in sorted(os.listdir(destino)):
+        if os.path.splitext(f)[1].lower() in comum.TIPOS:
+            caminho = os.path.join(destino, f)
+            if os.path.isfile(caminho):
+                os.remove(caminho)
+                removidos.append(f)
+    return removidos
+
+
+def extrair_pbl(pbl, limpar=True):
     nome = os.path.splitext(os.path.basename(pbl))[0]
     destino = os.path.join(comum.CODIGO_FONTE, nome)
     os.makedirs(destino, exist_ok=True)
     os.makedirs(comum.LOGS, exist_ok=True)
     log = os.path.join(comum.LOGS, nome + '.extracao.txt')
+
+    removidos = []
+    if limpar:
+        removidos = limpar_pasta(destino)
+        if removidos:
+            print('    Limpando %d .sr* antigo(s) em %s' % (len(removidos), destino))
+            for r in removidos:
+                print('      - %s' % r)
+
     print('==> Extraindo [%s] -> %s' % (pbl, destino))
     proc = subprocess.run(
         [comum.PBLDUMP, '-es', pbl, '*.*'],
@@ -72,6 +106,9 @@ def extrair_pbl(pbl):
     with open(log, 'w', encoding='utf-8') as lf:
         lf.write('Log de extracao de %s  [%s]\n' % (pbl, comum.agora()))
         lf.write('Destino: %s\n' % destino)
+        if limpar and removidos:
+            lf.write('Limpados %d .sr* antigo(s): %s\n'
+                     % (len(removidos), ', '.join(removidos)))
         lf.write(saida)
         lf.write('\nObjetos de fonte extraidos: %d\n' % len(arquivos))
         lf.write('Hashes atualizados em hashes.json: %d\n' % com_hash)
@@ -83,14 +120,17 @@ def main():
     if not os.path.isfile(comum.PBLDUMP):
         print('ERRO: PblDump.exe nao encontrado em', comum.PBLDUMP)
         return 1
-    pbls = carregar_pbls(sys.argv[1:])
+    args = sys.argv[1:]
+    limpar = '--nao-limpar' not in args
+    args = [a for a in args if a != '--nao-limpar']
+    pbls = carregar_pbls(args)
     if not pbls:
         print('Nenhum PBL informado. Edite config.json ou passe caminhos como argumento.')
         return 1
     os.makedirs(comum.CODIGO_FONTE, exist_ok=True)
     total = 0
     for pbl in pbls:
-        total += extrair_pbl(pbl)
+        total += extrair_pbl(pbl, limpar=limpar)
     print('\nExtracao concluida: %d objeto(s) em %d PBL(s).' % (total, len(pbls)))
     print('Baseline de hashes gravada em:', comum.HASHES)
     return 0
