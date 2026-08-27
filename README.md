@@ -17,8 +17,9 @@ volta para `.pbl`.
 7. [Atalhos (.bat)](#7-atalhos-bat)
 8. [Fluxo completo com Git e IA](#8-fluxo-completo-com-git-e-ia)
 9. [Como validar que nada quebrou](#9-como-validar-que-nada-quebrou)
-10. [Logs gerados](#10-logs-gerados)
-11. [Solução de problemas](#11-solução-de-problemas)
+10. [Como analisar dependências (`analise`)](#10-como-analisar-dependências-analise)
+11. [Logs gerados](#11-logs-gerados)
+12. [Solução de problemas](#12-solução-de-problemas)
 
 ---
 
@@ -28,8 +29,9 @@ volta para `.pbl`.
 C:\Users\Elton\Desktop\LazarusIA\
 │
 ├── extrair.bat           ⭐ ATALHOS (duplo clique)
-├── compilar.bat              extrair / compilar / validar
+├── compilar.bat              extrair / compilar / validar / analise
 ├── validar.bat
+├── analise.bat
 │
 ├── codigo_fonte\        ← ARQUIVOS DE TEXTO (.sr*) extraídos dos .pbl
 │   │                       É aqui que o Git e a IA trabalham.
@@ -51,6 +53,7 @@ C:\Users\Elton\Desktop\LazarusIA\
     ├── extrair.py          Extrai .sr* dos .pbl
     ├── compilar.py         Reconstrói .pbl a partir dos .sr*
     ├── validar.py          Compara .pbl recriado com a fonte
+    ├── analise.py          Mapeia dependências .sr* (nome/curinga/conteúdo)
     ├── pbldump\            PblDump.exe (extrator)
     └── python32\           Python 32-bit (para usar a DLL do PowerBuilder)
 ```
@@ -211,7 +214,7 @@ Extracao concluida: 20 objeto(s) em 1 PBL(s).
 ```
 
 Se aparecer `Objetos de fonte extraidos: 0`, veja a
-[seção de problemas](#10-solução-de-problemas).
+[seção de problemas](#12-solução-de-problemas).
 
 ---
 
@@ -305,15 +308,14 @@ Cada `OK` é um objeto importado e compilado. Se algum `FALHOU`, leia o log
 
 ## 7. Atalhos (.bat)
 
-Há dois arquivos prontos na pasta `scripts\`. Basta dar **dois cliques**:
+Há quatro arquivos prontos. Basta dar **dois cliques**:
 
-| Atalho | O que faz | Quando usar |
-|---|---|---|
 | Atalho | O que faz | Quando usar |
 |---|---|---|
 | `extrair.bat` | Extrai os `.sr*` para `codigo_fonte\` | Quando quiser atualizar os fontes a partir das `.pbl` originais |
 | `compilar.bat` | Recria os `.pbl` em `compilacao\` | **Depois** de editar os `.sr*` com a IA |
 | `validar.bat` | Compara o `.pbl` recriado com a fonte | Para conferir que nada quebrou |
+| `analise.bat` | Mapeia dependências e busca nas `.sr*` | Quando precisar achar onde um objeto/campo/tabela é usado (ver seção 10) |
 
 **Fluxo típico:**
 
@@ -420,7 +422,78 @@ final), o round-trip preservou o código — o compilador não "perdeu" nada.
 
 ---
 
-## 10. Logs gerados
+## 10. Como analisar dependências (`analise`)
+
+O `analise.bat` consulta o código-fonte extraído em `codigo_fonte\` para mapear
+**dependências** de um objeto (herança, DataWindows, funções, janelas, tabelas
+SQL) e para **localizar** onde um texto aparece dentro dos `.sr*`. É uma
+ferramenta de leitura: não modifica nada.
+
+> Use sempre **antes** de editar um objeto — ele mostra de um só golpe o que
+> o objeto usa e onde ele é citado, evitando abrir arquivo por arquivo.
+
+### Modo 1 — Por nome do objeto (todas as PBLs)
+
+Busca o objeto pelo nome em **toda** a árvore de `codigo_fonte\`. Se o mesmo
+nome existir em mais de uma PBL (ex.: `w_tab_fnc` em `deivide` e `ni_pfc_tab`),
+analisa **todas** e mostra o caminho de cada uma.
+
+```bat
+analise w_tab_fnc
+analise w_tab_fnc.srw        rem extensão é opcional
+```
+
+### Modo 2 — Por caminho (forçar uma PBL específica)
+
+```bat
+analise deivide\w_tab_fnc
+```
+
+### Modo 3 — Por curinga no nome (padrão)
+
+Encontra todos os objetos cujo nome casa com o padrão. Combinável com
+`--tipo srw|srd|srf|sru` para restringir por tipo.
+
+```bat
+analise w_tab_*                     rem todos que começam com w_tab_
+analise *telemetria* --tipo srd      rem só datawindows com "telemetria"
+```
+
+### Modo 4 — Por conteúdo (`--buscar`)
+
+Procura um **texto dentro do conteúdo** dos `.sr*` (case-insensitive, respeita a
+codificação cp1252 dos acentos) e devolve **onde** ele aparece: tipo do objeto,
+caminho e o(s) número(s) da(s) linha(s). Use para descobrir onde um campo,
+função, janela ou tabela é usado.
+
+```bat
+analise --buscar "ll_teq_id_seq"
+analise --buscar "ll_teq_id_seq" --tipo srw   rem só windows
+analise --buscar "het_historico_equip_telemetria"
+```
+
+**Restringir o escopo com `--em`:** por padrão a busca varre todos os `.sr*`.
+Use `--em "alvo"` para pesquisar **somente** num objeto, caminho ou padrão
+específico (o alvo aceita nome, `pbl\objeto` ou curinga, como no modo 1/2/3):
+
+```bat
+analise --buscar "teq_cd_equipamento" --em "deivide\w_tab_teq" --tipo srw
+analise --buscar "teq_cd_equipamento" --em "deivide\w_tab_*" --tipo srw
+```
+
+Saída do `--buscar` (exemplo):
+```
+2 objeto(s) contêm 'll_teq_id_seq':
+
+  deivide\w_tab_teq.srw  [Window]  (linha(s): 287, 293, 308)
+  sdo09\w_ope_his_eqp_ccusto.srw  [Window]  (linha(s): 257, 271, 313, 321)
+```
+
+> A varredura ignora a pasta `.git` e só lê arquivos `.sr*` reais.
+
+---
+
+## 11. Logs gerados
 
 Todos os logs têm **data e hora** no cabeçalho e no rodapé:
 
@@ -432,7 +505,7 @@ Todos os logs têm **data e hora** no cabeçalho e no rodapé:
 
 ---
 
-## 11. Solução de problemas
+## 12. Solução de problemas
 
 **"Objetos de fonte extraidos: 0"**
 - Confirme que o caminho no `pbls` existe e é um `.pbl` (não `.pbd`).
