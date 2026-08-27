@@ -14,12 +14,17 @@ Uso (via analise.bat, de qualquer pasta):
     analise --buscar "teq_id_seq" --tipo srw  # conteudo + filtro de tipo
     analise --buscar "teq_id_seq" --em "deivide\\w_tab_teq" --tipo srw
                                       # conteudo restrito a um objeto/PBL
+    analise --buscar "teq_id_seq" --em deivide
+                                      # PBL inteira pelo nome da pasta (sem *)
+    analise --buscar "teq_id_seq" --em "deivide/w_tab_teq"
+                                      # barra "/" também é aceita como separador
 
 Modos:
   - NOME/CAMINHO/CURINGA: resolve o objeto pelo nome do arquivo.
   - --buscar: procura um texto DENTRO do conteudo dos arquivos .sr* e
     devolve onde ele aparece (tipo, caminho, linha). Aceita --em para
-    restringir a busca a um objeto, caminho ou padrao especifico.
+    restringir a busca a um objeto, caminho, PBL (nome da pasta, sem
+    precisar de "*") ou padrao especifico.
 O diretório .git é ignorado na varredura e só arquivos .sr* são lidos.
 """
 
@@ -324,15 +329,23 @@ def _varrer(padrao):
 def resolver(termo):
     """Resolve um termo para caminhos .sr*.
     Aceita nome simples ('w_tab_fnc' ou 'w_tab_fnc.srw'), caminho
-    ('deivide\\w_tab_fnc') e padrão/curinga ('w_tab_*').
+    ('deivide\\w_tab_fnc' ou 'deivide/w_tab_fnc'), pasta/PBL completa
+    ('deivide') e padrão/curinga ('w_tab_*').
     Se houver mais de um objeto com o mesmo nome, retorna todos."""
     termo = termo.strip()
     if not termo:
         return []
+    termo = termo.replace("/", os.sep)
     p = Path(termo)
+    alvo_raiz = RAIZ / p  # resolvido contra a raiz dos fontes (indep. do cwd)
 
-    if p.is_file():
-        return [p]
+    if p.is_file() or alvo_raiz.is_file():
+        alvo = p if p.is_file() else alvo_raiz
+        return [alvo]
+
+    # Pasta/PBL: termo é um diretório → todos os .sr* dentro dela
+    if alvo_raiz.is_dir():
+        return sorted(set(_varrer(str(p) + os.sep + "**" + os.sep + "*.sr*")))
 
     # Curinga no nome
     if any(c in termo for c in "*?"):
@@ -387,6 +400,8 @@ def main():
         print("  analise *telemetria* --tipo srd  # curinga + filtro de tipo")
         print("  analise --buscar \"texto\"      # busca de CONTEUDO nos .sr*")
         print("  analise --buscar \"txt\" --em \"deivide\\w_tab_teq\" --tipo srw")
+        print("  analise --buscar \"txt\" --em deivide     # PBL inteira, sem *")
+        print("  analise --buscar \"txt\" --em \"sdo09/w_obj\"  # barra \"/\" vale")
         sys.exit(1)
 
     tipo_filtro = _extrair_flag(sys.argv, "--tipo")

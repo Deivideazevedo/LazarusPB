@@ -9,7 +9,7 @@ volta para `.pbl`.
 ## Índice
 
 1. [O que cada pasta faz](#1-o-que-cada-pasta-faz)
-2. [O que cada campo do config.json significa](#2-o-que-cada-campo-do-configjson-significa)
+2. [O que cada campo do config.json significa](#2-o-que-cada-campo-do-config-json-significa)
 3. [Pré-requisitos](#3-pré-requisitos)
 4. [Como configurar (passo a passo)](#4-como-configurar-passo-a-passo)
 5. [Como extrair](#5-como-extrair)
@@ -17,9 +17,10 @@ volta para `.pbl`.
 7. [Atalhos (.bat)](#7-atalhos-bat)
 8. [Fluxo completo com Git e IA](#8-fluxo-completo-com-git-e-ia)
 9. [Como validar que nada quebrou](#9-como-validar-que-nada-quebrou)
-10. [Como analisar dependências (`analise`)](#10-como-analisar-dependências-analise)
-11. [Logs gerados](#11-logs-gerados)
-12. [Solução de problemas](#12-solução-de-problemas)
+10. [Logs gerados](#10-logs-gerados)
+11. [Solução de problemas](#11-solução-de-problemas)
+12. [Como analisar dependências (`analise`)](#12-como-analisar-dependências-analise)
+13. [Mapa de correspondência entre PBLs (`origem`)](#13-mapa-de-correspondência-entre-pbls-origem)
 
 ---
 
@@ -29,12 +30,14 @@ volta para `.pbl`.
 C:\Users\Elton\Desktop\LazarusIA\
 │
 ├── extrair.bat           ⭐ ATALHOS (duplo clique)
-├── compilar.bat              extrair / compilar / validar / analise
+├── compilar.bat              extrair / compilar / validar / analise / origem
 ├── validar.bat
 ├── analise.bat
+├── origem.bat
 │
 ├── codigo_fonte\        ← ARQUIVOS DE TEXTO (.sr*) extraídos dos .pbl
 │   │                       É aqui que o Git e a IA trabalham.
+│   ├── .origem\             Mapa de correspondência (gerado por origem.bat)
 │   └── deivide\             Subpasta criada automaticamente para cada .pbl
 │       ├── w_ope_hec.srw    window
 │       ├── d_tab_oso_pref.srd   datawindow
@@ -54,9 +57,12 @@ C:\Users\Elton\Desktop\LazarusIA\
     ├── compilar.py         Reconstrói .pbl a partir dos .sr*
     ├── validar.py          Compara .pbl recriado com a fonte
     ├── analise.py          Mapeia dependências .sr* (nome/curinga/conteúdo)
+    ├── origem.py           Mapa de correspondência entre PBLs
     ├── pbldump\            PblDump.exe (extrator)
     └── python32\           Python 32-bit (para usar a DLL do PowerBuilder)
 ```
+
+---
 
 ---
 
@@ -88,11 +94,15 @@ Este é o arquivo que você edita. Ele fica na **raiz** do projeto:
 
 ---
 
+---
+
 ## 3. Pré-requisitos
 
 - **PowerBuilder 9 instalado** (para compilar; usa `pborc90.dll`).
 - **Python** (qualquer versão) — só para o passo de extração.
 - Git (opcional, para versionar).
+
+---
 
 ---
 
@@ -158,6 +168,8 @@ Se for outro projeto, use o application desse projeto.
 
 ---
 
+---
+
 ## 5. Como extrair
 
 Extrai o código-fonte dos `.pbl` da lista `pbls` para `codigo_fonte\<pbl>\`.
@@ -214,37 +226,62 @@ Extracao concluida: 20 objeto(s) em 1 PBL(s).
 ```
 
 Se aparecer `Objetos de fonte extraidos: 0`, veja a
-[seção de problemas](#12-solução-de-problemas).
+[seção de problemas](#11-solução-de-problemas).
+
+---
 
 ---
 
 ## 6. Como compilar (recriar o .pbl)
 
-Reconstrói o `.pbl` em `compilacao\<pbl>.pbl` a partir dos `.sr*` que estão em
+O comando **`compilar.bat <nome>`** reconstrói o `.pbl` em
+`compilacao\<pbl>.pbl` a partir do código-fonte que está em
 `codigo_fonte\<pbl>\`, importando e compilando cada objeto com o PowerBuilder.
+De **qualquer pasta**, dê dois cliques ou chame o atalho:
 
-> **Qual a origem dos objetos?** Para cada `.pbl` da lista `pbls`, a origem é
-> **somente** a pasta `codigo_fonte\<nome do pbl>\` que corresponde a ele.
-> Cada PBL é processado separado e vira um `.pbl` próprio em `compilacao\`.
-> Nada é misturado entre bibliotecas. O PBL original (de `pbls`) entra na
-> library list **apenas para leitura** (resolver referências) — os objetos
-> importados no `.pbl` novo vêm exclusivamente da pasta de fonte dele.
+```bat
+compilar.bat                # compila TODOS os PBLs do config.json (pbls)
+compilar.bat deivide        # compila só o deivide
+compilar.bat deivide sdo09  # compila vários escolhidos (um por argumento)
+```
 
-> **Atalho:** dê dois cliques em `compilar.bat` — faz a mesma coisa sem
-> digitar comando.
+> **De onde vêm os objetos?** Sempre da pasta `codigo_fonte\<nome do pbl>\`
+> correspondente — a compilação **não lê a origem** (`G:\sdo\programa`). Cada
+> PBL é processado separado e vira um `.pbl` próprio em `compilacao\`. O PBL
+> original (de `pbls`) entra na library list **apenas para leitura** (resolver
+> referências); nada é misturado entre bibliotecas.
+
+> Também aceita caminho completo do original
+> (`compilar.bat G:\sdo\programa\deivide.pbl`) por compatibilidade, mas o nome
+> simples basta: os objetos saem de `codigo_fonte\<nome>\` e o `.pbl` novo vai
+> para `compilacao\<nome>.pbl`.
+
+### Linha de comando via Python (sem atalho)
+
+**Opção A — Compilar todos do config.json:**
+```bat
+"...\scripts\python32\python.exe" "...\scripts\compilar.py"
+```
+
+**Opção B — Compilar PBLs específicos** (ignora `pbls`, mas ainda usa
+`lib_list`/`app_name`/`app_lib` do config):
+```bat
+"...\scripts\python32\python.exe" "...\scripts\compilar.py" deivide
+"...\scripts\python32\python.exe" "...\scripts\compilar.py" deivide sdo09
+```
+
+> **IMPORTANTE:** use o Python 32-bit (`python32\`), pois a DLL do PowerBuilder
+> é 32-bit. Não use o `python` comum aqui.
 >
-> **IMPORTANTE:** este comando usa o Python 32-bit (`python32\`), porque a DLL
-> do PowerBuilder é 32-bit. Não use `python` comum aqui.
->
-> Os comandos usam caminhos completos — rode de **qualquer pasta**, sem
-> precisar de `cd`.
+> O script **não varre** `codigo_fonte` sozinho: quem define o que compilar é a
+> lista de PBLs (config.json ou argumentos). Se a pasta `codigo_fonte\<nome>`
+> do PBL não existir, ele avisa e para nesse PBL.
 
 ### Travas automáticas de encoding/acento
 
-Os fontes `.sr*` são **ANSI/Windows-1252**. Antes de importar qualquer objeto,
-o `compilar.py` roda `checar_fontes.py`, que bloqueia a compilação se detectar
-perda de encoding/acentos — o dano clássico é uma sessão de edição que lê os
-arquivos como UTF-8 e salva de volta apagando todo caractere acentuado
+Antes de importar cada objeto, o `compilar.py` roda `checar_fontes.py`, que
+**bloqueia** a compilação se detectar perda de encoding/acentos — o dano clássico
+é uma sessão de edição que lê os `.sr*` como UTF-8 e salva apagando os acentos
 (`Observação` vira `Observao`). As duas camadas:
 
 | Camada | O que pega | Como |
@@ -256,41 +293,13 @@ arquivos como UTF-8 e salva de volta apagando todo caractere acentuado
 > git, então a camada B não o cobre. Por isso: **faça commit logo após a
 > extração/criação** — a partir daí qualquer edição que stripar acentos é
 > bloqueada.
-
-Saída: `ERRO` bloqueia; `AVISO` só informa. Para rodar avulso:
-
-```bat
-"...\scripts\python32\python.exe" "...\scripts\checar_fontes.py" deivide
-```
-
-Se um erro for falso positivo confirmado (raro), contorne com
-`--ignorar-checagem` — mas confira cada ponto antes.
-
-### Opção A — Linha de comando (usa o config.json)
-Compila os PBLs listados em `"pbls"` do config.json. Cada um é compilado a
-partir da sua própria pasta `codigo_fonte\<nome do pbl>\`.
-
-```bat
-"C:\Users\Elton\Desktop\LazarusIA\scripts\python32\python.exe" "C:\Users\Elton\Desktop\LazarusIA\scripts\compilar.py"
-```
-
-> O script **não varre** a pasta `codigo_fonte` sozinho. Quem define o que
-> compilar é a lista de PBLs (config.json ou argumentos). Se a pasta
-> `codigo_fonte\<nome>` do PBL não existir, ele avisa e para nesse PBL.
-
-### Opção B — Informar o caminho direto
-Compila **apenas** os PBLs passados (ignora `"pbls"` do config.json, mas ainda
-usa `lib_list`/`app_name`/`app_lib` dele):
-
-```bat
-"C:\Users\Elton\Desktop\LazarusIA\scripts\python32\python.exe" "C:\Users\Elton\Desktop\LazarusIA\scripts\compilar.py" deivide
-```
-
-O argumento pode ser só o **nome** do PBL (`deivide` ou `deivide.pbl`), pois a
-compilação **não lê a origem**: os objetos vêm sempre de
-`codigo_fonte\<nome>\` e o resultado vai para `compilacao\<nome>.pbl`.
-Caminho completo do original (`G:\sdo\programa\deivide.pbl`) também é aceito,
-por compatibilidade — mas não é obrigatório.
+>
+> Saída: `ERRO` bloqueia; `AVISO` só informa. Para rodar avulso:
+> ```bat
+> "...\scripts\python32\python.exe" "...\scripts\checar_fontes.py" deivide
+> ```
+> Falso positivo confirmado (raro): contorne com `--ignorar-checagem`, mas
+> confira cada ponto antes.
 
 ### Resultado esperado
 ```
@@ -306,16 +315,20 @@ Cada `OK` é um objeto importado e compilado. Se algum `FALHOU`, leia o log
 
 ---
 
+---
+
 ## 7. Atalhos (.bat)
 
-Há quatro arquivos prontos. Basta dar **dois cliques**:
+Todos os comandos têm um `.bat` pronto para **dois cliques**, na raiz do
+Lazarus IA. Eles são a porta de entrada dos fluxos do pipeline:
 
-| Atalho | O que faz | Quando usar |
+| Atalho | O que faz | Detalhes |
 |---|---|---|
-| `extrair.bat` | Extrai os `.sr*` para `codigo_fonte\` | Quando quiser atualizar os fontes a partir das `.pbl` originais |
-| `compilar.bat` | Recria os `.pbl` em `compilacao\` | **Depois** de editar os `.sr*` com a IA |
-| `validar.bat` | Compara o `.pbl` recriado com a fonte | Para conferir que nada quebrou |
-| `analise.bat` | Mapeia dependências e busca nas `.sr*` | Quando precisar achar onde um objeto/campo/tabela é usado (ver seção 10) |
+| `extrair.bat` | Extrai os `.sr*` para `codigo_fonte\` | [seção 5](#5-como-extrair) |
+| `compilar.bat` | Recria os `.pbl` em `compilacao\` | [seção 6](#6-como-compilar-recriar-o-pbl) |
+| `validar.bat` | Compara o `.pbl` recriado com a fonte | [seção 9](#9-como-validar-que-nada-quebrou) |
+| `analise.bat` | Mapeia dependências e busca conteúdo nos `.sr*` | [seção 12](#12-como-analisar-dependências-analise) |
+| `origem.bat` | Mapa de correspondência: onde cada objeto da origem existe | [seção 13](#13-mapa-de-correspondência-entre-pbls-origem) |
 
 **Fluxo típico:**
 
@@ -325,7 +338,11 @@ Há quatro arquivos prontos. Basta dar **dois cliques**:
 4. Duplo clique em `validar.bat` → confirma que o round-trip preservou tudo.
 5. Copie `compilacao\<pbl>.pbl` para o lugar do original.
 
-Os dois atalhos aceitam nomes ou caminhos para processar só alguns PBLs:
+> `analise.bat` e `origem.bat` são **opcionais** (não fazem parte do ciclo
+> extrair → compilar → validar): ajudam a entender o código antes de editar e a
+> decidir onde colar objetos. Veja os links Acima para o uso detalhado.
+
+`extrair` e `compilar` aceitam nomes ou caminhos para processar só alguns PBLs:
 
 ```bat
 "C:\Users\Elton\Desktop\LazarusIA\extrair.bat"  elton
@@ -385,6 +402,8 @@ Copie `compilacao\<pbl>.pbl` para o lugar da biblioteca original
 
 ---
 
+---
+
 ## 9. Como validar que nada quebrou
 
 ### Modo fácil — `validar.bat`
@@ -422,78 +441,9 @@ final), o round-trip preservou o código — o compilador não "perdeu" nada.
 
 ---
 
-## 10. Como analisar dependências (`analise`)
-
-O `analise.bat` consulta o código-fonte extraído em `codigo_fonte\` para mapear
-**dependências** de um objeto (herança, DataWindows, funções, janelas, tabelas
-SQL) e para **localizar** onde um texto aparece dentro dos `.sr*`. É uma
-ferramenta de leitura: não modifica nada.
-
-> Use sempre **antes** de editar um objeto — ele mostra de um só golpe o que
-> o objeto usa e onde ele é citado, evitando abrir arquivo por arquivo.
-
-### Modo 1 — Por nome do objeto (todas as PBLs)
-
-Busca o objeto pelo nome em **toda** a árvore de `codigo_fonte\`. Se o mesmo
-nome existir em mais de uma PBL (ex.: `w_tab_fnc` em `deivide` e `ni_pfc_tab`),
-analisa **todas** e mostra o caminho de cada uma.
-
-```bat
-analise w_tab_fnc
-analise w_tab_fnc.srw        rem extensão é opcional
-```
-
-### Modo 2 — Por caminho (forçar uma PBL específica)
-
-```bat
-analise deivide\w_tab_fnc
-```
-
-### Modo 3 — Por curinga no nome (padrão)
-
-Encontra todos os objetos cujo nome casa com o padrão. Combinável com
-`--tipo srw|srd|srf|sru` para restringir por tipo.
-
-```bat
-analise w_tab_*                     rem todos que começam com w_tab_
-analise *telemetria* --tipo srd      rem só datawindows com "telemetria"
-```
-
-### Modo 4 — Por conteúdo (`--buscar`)
-
-Procura um **texto dentro do conteúdo** dos `.sr*` (case-insensitive, respeita a
-codificação cp1252 dos acentos) e devolve **onde** ele aparece: tipo do objeto,
-caminho e o(s) número(s) da(s) linha(s). Use para descobrir onde um campo,
-função, janela ou tabela é usado.
-
-```bat
-analise --buscar "ll_teq_id_seq"
-analise --buscar "ll_teq_id_seq" --tipo srw   rem só windows
-analise --buscar "het_historico_equip_telemetria"
-```
-
-**Restringir o escopo com `--em`:** por padrão a busca varre todos os `.sr*`.
-Use `--em "alvo"` para pesquisar **somente** num objeto, caminho ou padrão
-específico (o alvo aceita nome, `pbl\objeto` ou curinga, como no modo 1/2/3):
-
-```bat
-analise --buscar "teq_cd_equipamento" --em "deivide\w_tab_teq" --tipo srw
-analise --buscar "teq_cd_equipamento" --em "deivide\w_tab_*" --tipo srw
-```
-
-Saída do `--buscar` (exemplo):
-```
-2 objeto(s) contêm 'll_teq_id_seq':
-
-  deivide\w_tab_teq.srw  [Window]  (linha(s): 287, 293, 308)
-  sdo09\w_ope_his_eqp_ccusto.srw  [Window]  (linha(s): 257, 271, 313, 321)
-```
-
-> A varredura ignora a pasta `.git` e só lê arquivos `.sr*` reais.
-
 ---
 
-## 11. Logs gerados
+## 10. Logs gerados
 
 Todos os logs têm **data e hora** no cabeçalho e no rodapé:
 
@@ -505,7 +455,9 @@ Todos os logs têm **data e hora** no cabeçalho e no rodapé:
 
 ---
 
-## 12. Solução de problemas
+---
+
+## 11. Solução de problemas
 
 **"Objetos de fonte extraidos: 0"**
 - Confirme que o caminho no `pbls` existe e é um `.pbl` (não `.pbd`).
@@ -538,3 +490,130 @@ referências durante a compilação — nada é copiado nem alterado nelas.
 **A compilação muda os nomes/referências no código?**
 Não. Os arquivos `.sr*` ficam intactos com os mesmos nomes de objetos e
 referências. O `lib_list` é apenas o caminho de busca que o compilador usa.
+
+---
+
+---
+
+## 12. Como analisar dependências (`analise`)
+
+O `analise.bat` consulta o código-fonte extraído em `codigo_fonte\` para mapear
+**dependências** de um objeto (herança, DataWindows, funções, janelas, tabelas
+SQL) e para **localizar** onde um texto aparece dentro dos `.sr*`. É uma
+ferramenta de leitura: não modifica nada.
+
+> Use sempre **antes** de editar um objeto — ele mostra de um só golpe o que
+> o objeto usa e onde ele é citado, evitando abrir arquivo por arquivo.
+
+### Modo 1 — Por nome do objeto (todas as PBLs)
+
+Busca o objeto pelo nome em **toda** a árvore de `codigo_fonte\`. Se o mesmo
+nome existir em mais de uma PBL (ex.: `w_tab_fnc` em `deivide` e `ni_pfc_tab`),
+analisa **todas** e mostra o caminho de cada uma.
+
+```bat
+analise w_tab_fnc
+analise w_tab_fnc.srw        # extensão é opcional
+```
+
+### Modo 2 — Por caminho (forçar uma PBL específica)
+
+```bat
+analise deivide\w_tab_fnc
+```
+
+### Modo 3 — Por curinga no nome (padrão)
+
+Encontra todos os objetos cujo nome casa com o padrão. Combinável com
+`--tipo srw|srd|srf|sru` para restringir por tipo.
+
+```bat
+analise w_tab_*                  # todos que começam com w_tab_
+analise *telemetria* --tipo srd  # só datawindows com "telemetria"
+```
+
+### Modo 4 — Por conteúdo (`--buscar`)
+
+Procura um **texto dentro do conteúdo** dos `.sr*` (case-insensitive, respeita a
+codificação cp1252 dos acentos) e devolve **onde** ele aparece: tipo do objeto,
+caminho e o(s) número(s) da(s) linha(s). Use para descobrir onde um campo,
+função, janela ou tabela é usado.
+
+```bat
+analise --buscar "ll_teq_id_seq"
+analise --buscar "ll_teq_id_seq" --tipo srw   # só windows
+analise --buscar "het_historico_equip_telemetria"
+```
+
+**Restringir o escopo com `--em`:** por padrão a busca varre todos os `.sr*`.
+Use `--em "alvo"` para pesquisar **somente** num objeto, caminho, PBL ou padrão
+específico. O alvo aceita nome (`w_tab_fnc`), `pbl\objeto` (`deivide\w_tab_fnc`),
+**o nome da PBL sozinho** (`deivide`) e curinga (`w_tab_*`). A barra `/` também
+é aceita como separador de caminho, igual a `\`. Para escopar uma PBL inteira,
+basta passar o nome da pasta, **sem precisar de `*`**:
+
+```bat
+analise --buscar "teq_cd_equipamento" --em "deivide\w_tab_teq" --tipo srw
+analise --buscar "teq_cd_equipamento" --em "deivide/w_tab_teq" --tipo srw   # barra "/" também vale
+analise --buscar "teq_cd_equipamento" --em deivide                          # PBL inteira, sem "*"
+analise --buscar "teq_cd_equipamento" --em "deivide\w_tab_*" --tipo srw    # curinga (opcional)
+```
+
+Saída do `--buscar` (exemplo):
+```
+2 objeto(s) contêm 'll_teq_id_seq':
+
+  deivide\w_tab_teq.srw  [Window]  (linha(s): 287, 293, 308)
+  sdo09\w_ope_his_eqp_ccusto.srw  [Window]  (linha(s): 257, 271, 313, 321)
+```
+
+> A varredura ignora a pasta `.git` e só lê arquivos `.sr*` reais.
+
+---
+
+---
+
+## 13. Mapa de correspondência entre PBLs (`origem`)
+
+O `origem.bat` mapeia uma PBL de trabalho (ex.: `deivide`) contra **todas as
+outras** PBLs extraídas em `codigo_fonte`, para você saber de uma vez **onde**
+cada objeto da origem já existe — ou se é objeto novo.
+
+É uma ferramenta de **leitura e cópia apenas**: não altera nenhum `.sr*` e não
+recompila nada. Onde você vai colar os arquivos é decidido por você depois.
+
+```bat
+origem deivide        # mapa de correspondência da PBL deivide
+```
+
+### O que ele gera
+
+Cria (se não existir) a pasta oculta `.origem\` **dentro de `codigo_fonte\`** —
+fica no topo da listagem, fora do versionamento (`.gitignore` do repo de
+fontes) — e, dentro dela, uma pasta com o nome da PBL origem. As PBLs origem
+podem coexistir (uma pasta por PBL origem):
+
+```
+codigo_fonte\
+└── .origem\
+    └── deivide\        <- isolado por PBL origem
+        ├── relatorio.txt
+        ├── sdo09\        <- objetos da origem que JÁ existem em sdo09
+        │     d_lst_teq.srd
+        │     w_tab_teq.srw
+        ├── ni_pfc_tab\   <- objetos da origem que existem em ni_pfc_tab
+        │     w_tab_fnc.srw
+        └── novos objetos\   <- objetos da origem sem correspondência em nenhuma PBL
+              w_ope_his_eqp_telemetria.srw
+              ...
+```
+
+A cada execução só a subpasta da PBL origem informada é recriada do zero
+(ex.: rodar `origem deivide` regenera apenas `.origem\deivide\`, sem mexer em
+`.origem\sdo01\`).
+
+- **Uma pasta por PBL correspondente**: cada arquivo é copiado para a pasta da
+  PBL onde existe um objeto de mesmo nome. Se existir em várias PBLs, vai para
+  todas (a pasta mostra todas as opções).
+- **`novos objetos\`**: objetos da origem que não existem em **nenhuma** outra PBL.
+- **`relatorio.txt`**: resumo com a contagem por PBL e a lista de `novos objetos`.
