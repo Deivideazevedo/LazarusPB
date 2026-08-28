@@ -18,6 +18,13 @@ Uso (via analise.bat, de qualquer pasta):
                                       # PBL inteira pelo nome da pasta (sem *)
     analise --buscar "teq_id_seq" --em "deivide/w_tab_teq"
                                       # barra "/" também é aceita como separador
+    analise --buscar "vinculacao de soltura"
+                                      # padrão: ignora acento e case
+                                      # ("vinculacao" acha "vinculação")
+    analise --buscar "Vinculação" --acentos
+                                      # respeita ACENTOS, mantém case-insensitive
+    Flags (--tipo, --em, --acentos) podem vir em qualquer ordem:
+    analise --em deivide --tipo srd --buscar "texto"
 
 Modos:
   - NOME/CAMINHO/CURINGA: resolve o objeto pelo nome do arquivo.
@@ -31,6 +38,7 @@ O diretório .git é ignorado na varredura e só arquivos .sr* são lidos.
 import re
 import sys
 import os
+import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -361,25 +369,69 @@ def resolver(termo):
     ))
 
 
-def buscar_conteudo(texto, tipo_filtro=None, alvos=None):
-    """Procura um texto dentro do conteúdo dos .sr* (case-insensitive).
+def _normalizar(texto):
+    """Remove acentos e lower-case, via unicodedata (robusto para qualquer
+    acento latino). Usada na busca --buscar padrão (independente de case e
+    acentos). Não altera o encoding dos .sr*: só cria a forma normalizada em
+    memória."""
+    n = unicodedata.normalize("NFD", texto)
+    return "".join(c for c in n if not unicodedata.combining(c)).lower()
+
+
+def _buscar_worker(args):
+    """Worker paralelo: procura o alvo num único arquivo.
+    args = (caminho, tipo_filtro, texto, respeitar_acentos).
+    Devolve (caminho, [nº das linhas]) ou None se não houver match."""
+    caminho, tipo_filtro, texto, respeitar_acentos = args
+    arq = Path(caminho)
+    if tipo_filtro and arq.suffix.lower() != "." + tipo_filtro.lower():
+        return None
+    conteudo = ler_arquivo(arq)
+    if respeitar_acentos:
+        alvo = texto.lower()
+        conteudo_lc = conteudo.lower()
+        if alvo not in conteudo_lc:
+            return None
+        linhas = [i for i, linha in enumerate(conteudo_lc.splitlines(), start=1)
+                  if alvo in linha]
+    else:
+        alvo = _normalizar(texto)
+        conteudo_norm = _normalizar(conteudo)
+        if alvo not in conteudo_norm:
+            return None
+        linhas = [i for i, linha in enumerate(conteudo_norm.splitlines(), start=1)
+                  if alvo in linha]
+    return (caminho, linhas)
+
+
+def buscar_conteudo(texto, tipo_filtro=None, alvos=None, respeitar_acentos=False,
+                    paralelo=True):
+    """Procura um texto dentro do conteúdo dos .sr*.
     alvos: lista opcional de arquivos a pesquisar (escopo/--em). Se vazio,
-    varre todos os .sr*. Retorna lista de (caminho, linhas)."""
-    alvo = texto.lower()
-    resultados = []
-    arquivos = alvos if alvos else _varrer("*")
-    for arq in arquivos:
-        if tipo_filtro and arq.suffix.lower() != "." + tipo_filtro.lower():
-            continue
-        conteudo = ler_arquivo(arq)
-        if alvo not in conteudo.lower():
-            continue
-        linhas = []
-        for i, linha in enumerate(conteudo.splitlines(), start=1):
-            if alvo in linha.lower():
-                linhas.append(i)
-        resultados.append((arq, linhas))
-    return resultados
+    varre todos os .sr*. Com respeitar_acentos=True a busca ignora case mas
+    respeita acentos; padrão é case-insensitive e ignora acentos.
+    Processa os arquivos em paralelo (multiprocessing) quando há muitos.
+    Retorna lista de (caminho, linhas)."""
+    arquivos = [a for a in (alvos if alvos is not None else _varrer("*"))]
+    if tipo_filtro:
+        arquivos = [a for a in arquivos
+                    if a.suffix.lower() == "." + tipo_filtro.lower()]
+    if not arquivos:
+        return []
+    args = [(str(a), tipo_filtro, texto, respeitar_acentos) for a in arquivos]
+    if paralelo and len(args) > 1:
+        from multiprocessing import Pool, cpu_count
+        nprocs = min(cpu_count(), len(args))
+        if nprocs > 1:
+            with Pool(processes=nprocs) as pool:
+                chunksize = max(1, (len(args) + nprocs * 4 - 1) // (nprocs * 4))
+                parcial = pool.map(_buscar_worker, args, chunksize=chunksize)
+        else:
+            parcial = [_buscar_worker(a) for a in args]
+    else:
+        parcial = [_buscar_worker(a) for a in args]
+    return [(Path(c), linhas)
+            for c, linhas in [x for x in parcial if x is not None]]
 
 
 def _extrair_flag(sysv, flag):
@@ -389,6 +441,63 @@ def _extrair_flag(sysv, flag):
         if idx + 1 < len(sysv):
             return sysv[idx + 1]
     return None
+
+
+# Flags aceitas, breve explicação e exemplo de uso (exibidos no erro de flag
+# desconhecida). O exemplo com '{t}' usa o termo digitado no --buscar (quando
+# existir); o exemplo fixo serve quando não há --buscar na linha de comando.
+_FLAGS_DISPONIVEIS = [
+    ("--buscar", "Busca o texto dentro do conteúdo dos .sr*.",
+     '--buscar "{t}"', '--buscar "ll_teq_id_seq"'),
+    ("--acentos", "Na busca, respeita os acentos (mantém case-insensitive).",
+     '--buscar "{t}" --acentos', '--buscar "ll_teq_id_seq" --acentos'),
+    ("--tipo", "Filtra por tipo de objeto: srw | srd | srf | sru.",
+     '--buscar "{t}" --tipo srd', '*telemetria* --tipo srd'),
+    ("--em", "Restringe a busca a um objeto/caminho/PBL/padrão.",
+     '--buscar "{t}" --em deivide\\w_tab_teq',
+     '--buscar "ll_teq_id_seq" --em deivide\\w_tab_teq'),
+]
+_FLAGS_CONHECIDAS = {f for f, _, _, _ in _FLAGS_DISPONIVEIS}
+
+
+def _validar_flags(argv):
+    """Devolve a lista de flags desconhecidas digitadas (começam com '--'.
+    mas não são --tipo/--em/--buscar/--acentos). Se houver, imprime o erro
+    com a lista das flags válidas (explicação alinhada com o exemplo) e
+    devolve True (para interromper)."""
+    desconhecidas = [a for a in argv if a.startswith("--") and a not in _FLAGS_CONHECIDAS]
+    if not desconhecidas:
+        return False
+    termo = _extrair_flag(argv, "--buscar")
+    print("Flag desconhecida:", ", ".join(f"'{a}'" for a in desconhecidas))
+    print("\nFlags válidas:")
+    ident = " " * 15  # alinha o exemplo com o início da explicação
+    for f, d, ex_com, ex_sem in _FLAGS_DISPONIVEIS:
+        ex = ex_com.format(t=termo) if termo else ex_sem
+        print(f"  {f:<12} {d}")
+        print(f"{ident}ex.: {ex}")
+    return True
+
+
+def _montar_args(argv):
+    """Normaliza a linha de comando: devolve (termo, tipo, em, acess).
+    aceitando as flags em qualquer ordem. 'termo' é o --buscar (texto a
+    procurar) ou o nome/caminho/curinga do modo padrão. 'acess' (--acentos)
+    indica que a busca respeita os acentos (mantendo case-insensitive)."""
+    resto = list(argv)
+    acess = "--acentos" in resto
+    tipo = _extrair_flag(resto, "--tipo")
+    em = _extrair_flag(resto, "--em")
+    for flag in ("--acentos", "--buscar"):
+        if flag in resto:
+            resto.remove(flag)
+    for flag in ("--tipo", "--em"):
+        while flag in resto:
+            idx = resto.index(flag)
+            resto = resto[:idx] + resto[idx + 2:]
+    resto = [a for a in resto if a]
+    termo = resto[0] if resto else ""
+    return termo, tipo, em, acess
 
 
 def main():
@@ -402,27 +511,33 @@ def main():
         print("  analise --buscar \"txt\" --em \"deivide\\w_tab_teq\" --tipo srw")
         print("  analise --buscar \"txt\" --em deivide     # PBL inteira, sem *")
         print("  analise --buscar \"txt\" --em \"sdo09/w_obj\"  # barra \"/\" vale")
+        print("  analise --buscar \"txt\" --acentos  # respeita ACENTOS (case-insensitive)")
+        print("  Flags (--tipo, --em, --acentos) valem em qualquer ordem.")
         sys.exit(1)
 
-    tipo_filtro = _extrair_flag(sys.argv, "--tipo")
+    if _validar_flags(sys.argv[1:]):
+        sys.exit(1)
+
+    buscar_mode = "--buscar" in sys.argv
+    termo, tipo_filtro, em, acess = _montar_args(sys.argv[1:])
 
     # Modo --buscar: busca por CONTEÚDO (com escopo opcional via --em)
-    if sys.argv[1] == "--buscar":
-        texto = sys.argv[2] if len(sys.argv) > 2 else ""
+    if buscar_mode:
+        texto = termo
         if not texto:
             print("Informe o texto a buscar: analise --buscar \"texto\"")
             sys.exit(1)
         # Escopo: --em resolve um objeto/caminho/padrão; sem ele, varre tudo
-        em = _extrair_flag(sys.argv, "--em")
         alvos = resolver(em) if em else None
         if em and not alvos:
             print(f"--em: nenhum objeto encontrado para: {em}")
             sys.exit(0)
-        resultados = buscar_conteudo(texto, tipo_filtro, alvos)
+        resultados = buscar_conteudo(texto, tipo_filtro, alvos, acess)
+        modo = "case-insensitive / respeita acentos" if acess else "case-insensitive / ignora acentos"
         if not resultados:
-            print(f"Nenhum .sr* contém: {texto}")
+            print(f"Nenhum .sr* contém: {texto}  (busca {modo})")
             sys.exit(0)
-        print(f"{len(resultados)} objeto(s) contêm '{texto}':\n")
+        print(f"{len(resultados)} objeto(s) contêm '{texto}' ({modo}):\n")
         for arq, linhas in resultados:
             rel = arq.relative_to(RAIZ)
             tipo = NOME_TIPO.get(arq.suffix.lower(), arq.suffix.lower())
@@ -432,7 +547,6 @@ def main():
         sys.exit(0)
 
     # Modo padrão: por nome/caminho/curinga
-    termo = sys.argv[1]
     arquivos = resolver(termo)
     if not arquivos:
         print(f"Nenhum objeto encontrado para: {termo}")

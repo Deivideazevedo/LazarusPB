@@ -534,16 +534,26 @@ analise *telemetria* --tipo srd  # só datawindows com "telemetria"
 
 ### Modo 4 — Por conteúdo (`--buscar`)
 
-Procura um **texto dentro do conteúdo** dos `.sr*` (case-insensitive, respeita a
-codificação cp1252 dos acentos) e devolve **onde** ele aparece: tipo do objeto,
-caminho e o(s) número(s) da(s) linha(s). Use para descobrir onde um campo,
-função, janela ou tabela é usado.
+Procura um **texto dentro do conteúdo** dos `.sr*` e devolve **onde** ele
+aparece: tipo do objeto, caminho e o(s) número(s) da(s) linha(s). Use para
+descobrir onde um campo, função, janela ou tabela é usado.
+
+**Por padrão a busca é case-insensitive e ignora acentos** (independente da
+codificação cp1252 dos arquivos — a comparação é normalizada em memória, sem
+alterar nada no disco). Assim `--buscar "situacao"` acha também `Situação`,
+`SITUAÇÃO`, etc. Se quiser **respeitar os acentos** (mas continuar
+case-insensitive), use `--acentos`.
 
 ```bat
 analise --buscar "ll_teq_id_seq"
-analise --buscar "ll_teq_id_seq" --tipo srw   # só windows
+analise --buscar "ll_teq_id_seq" --tipo srw          # só windows
 analise --buscar "het_historico_equip_telemetria"
+analise --buscar "vinculacao de soltura"             # padrão: acha "Vinculação de soltura"
+analise --buscar "Vinculação" --acentos             # respeita acentos (case-insensitive)
 ```
+
+> As flags `--tipo`, `--em` e `--acentos` podem vir em **qualquer ordem**,
+> antes ou depois do `--buscar` e do texto — o resultado é o mesmo.
 
 **Restringir o escopo com `--em`:** por padrão a busca varre todos os `.sr*`.
 Use `--em "alvo"` para pesquisar **somente** num objeto, caminho, PBL ou padrão
