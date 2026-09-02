@@ -80,6 +80,7 @@ def analisar_srw(caminho):
         "funcoes": [],
         "janelas": [],
         "objetos": [],
+        "procedures": [],
         "sql": [],
     }
 
@@ -117,6 +118,12 @@ def analisar_srw(caminho):
         if tabela not in resultado["sql"]:
             resultado["sql"].append(tabela)
 
+    # Procedures: declare alias procedure for sp_xxx
+    for m in re.finditer(r'declare\s+\w+\s+procedure\s+for\s+(\w+)', conteudo, re.IGNORECASE):
+        proc = m.group(1)
+        if proc not in resultado["procedures"]:
+            resultado["procedures"].append(proc)
+
     return resultado
 
 
@@ -134,6 +141,7 @@ def analisar_srd(caminho):
         "tipo": "DataWindow",
         "tabelas": [],
         "colunas": [],
+        "procedures": [],
         "code_tables": [],
     }
 
@@ -164,6 +172,12 @@ def analisar_srd(caminho):
     # Code Tables: values=("x" / "y" ...)
     for m in re.finditer(r'values\s*=\s*\("([^"]+)"', conteudo):
         resultado["code_tables"].append(m.group(1))
+
+    # Procedures: procedure="1 execute [dbo.]sp_xxx;1 ...
+    for m in re.finditer(r'procedure="1\s+(?:execute|exec)\s+(?:(?:dbo|vetorh)\.{1,2})?([a-zA-Z_]\w*)\s*;1', conteudo, re.IGNORECASE):
+        proc = m.group(1)
+        if proc not in resultado["procedures"]:
+            resultado["procedures"].append(proc)
 
     return resultado
 
@@ -287,6 +301,8 @@ def formatar_saida(resultado):
             linhas.append(f"Janelas que abre: {', '.join(resultado['janelas'])}")
         if resultado["objetos"]:
             linhas.append(f"Objetos: {', '.join(resultado['objetos'])}")
+        if resultado["procedures"]:
+            linhas.append(f"Procedures: {', '.join(resultado['procedures'])}")
         if resultado["sql"]:
             linhas.append(f"Tabelas SQL: {', '.join(resultado['sql'])}")
 
@@ -296,6 +312,8 @@ def formatar_saida(resultado):
         if resultado["colunas"]:
             cols = resultado["colunas"][:15]
             linhas.append(f"Colunas ({len(resultado['colunas'])} total): {', '.join(cols)}")
+        if resultado["procedures"]:
+            linhas.append(f"Procedures: {', '.join(resultado['procedures'])}")
         if resultado["code_tables"]:
             linhas.append(f"Code Tables: {', '.join(resultado['code_tables'][:5])}")
 
