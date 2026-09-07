@@ -46,13 +46,76 @@ import comum
 
 RAIZ = Path(comum.CODIGO_FONTE)
 
-EXTENSOES = (".srw", ".srd", ".srf", ".sru")
+EXTENSOES = (".srw", ".srd", ".srf", ".sru", ".srm", ".sra")
 NOME_TIPO = {
     ".srw": "Window",
     ".srd": "DataWindow",
     ".srf": "Function",
     ".sru": "UserObject",
+    ".srm": "Menu",
+    ".sra": "Application",
 }
+
+_MAPA_MENUS_CACHE = None
+
+
+def obter_mapa_menus():
+    """Varre todos os arquivos .srm e mapeia: nome_janela (lowercase) -> lista de caminhos de menu."""
+    global _MAPA_MENUS_CACHE
+    if _MAPA_MENUS_CACHE is not None:
+        return _MAPA_MENUS_CACHE
+
+    mapa = {}
+    for arq in RAIZ.rglob("*.srm"):
+        if ".git" in arq.parts:
+            continue
+        conteudo = ler_arquivo(arq)
+        if not conteudo or conteudo.startswith("ERRO:"):
+            continue
+
+        menu_principal = arq.stem
+
+        # 1. Mapear hierarquia pai-filho: type <item> from menu within <pai>
+        pais = {}
+        for m in re.finditer(r'type\s+(\w+)\s+from\s+(?:menu|[\w`]+)\s+within\s+(\w+)', conteudo):
+            filho, pai = m.group(1), m.group(2)
+            pais[filho] = pai
+
+        # 2. Mapear rotulos (text): on <item>.create ... this.text = "..." ... end on
+        titulos = {}
+        for m in re.finditer(r'on\s+(\w+)\.create(.*?)end\s+on', conteudo, re.DOTALL):
+            item, bloco = m.group(1), m.group(2)
+            m_text = re.search(r'this\.text\s*=\s*"([^"]*)"', bloco)
+            if m_text:
+                txt = m_text.group(1).replace("&", "").strip()
+                if txt and txt != "-":
+                    titulos[item] = txt
+
+        # 3. Mapear chamadas de abertura de janela
+        for m in re.finditer(r'type\s+(\w+)\s+from.*?(?:event\s+clicked;|(?:on\s+\1\.create))(.*?)end\s+(?:event|on)', conteudo, re.DOTALL):
+            item, bloco = m.group(1), m.group(2)
+            for m_open in re.finditer(r'Open(?:Sheet)?(?:WithParm|WithPop)?\s*\(\s*["\']?(\w+)', bloco):
+                janela = m_open.group(1)
+
+                caminho_itens = [item]
+                curr = item
+                while curr in pais and pais[curr] != menu_principal:
+                    curr = pais[curr]
+                    caminho_itens.append(curr)
+
+                caminho_itens.reverse()
+
+                caminho_legivel = []
+                for node in caminho_itens:
+                    lbl = titulos.get(node, node)
+                    caminho_legivel.append(lbl)
+
+                path_str = f"{menu_principal} -> " + " > ".join(caminho_legivel)
+                if path_str not in mapa.setdefault(janela.lower(), []):
+                    mapa[janela.lower()].append(path_str)
+
+    _MAPA_MENUS_CACHE = mapa
+    return _MAPA_MENUS_CACHE
 
 
 def ler_arquivo(caminho):
@@ -76,6 +139,7 @@ def analisar_srw(caminho):
         "pbl": pasta,
         "tipo": "Window",
         "heranca": [],
+        "menus": obter_mapa_menus().get(nome.lower(), []),
         "datawindows": [],
         "funcoes": [],
         "janelas": [],
@@ -266,6 +330,52 @@ def analisar_sru(caminho):
     return resultado
 
 
+def analisar_srm(caminho):
+    """Analisa um arquivo Menu (.srm)."""
+    conteudo = ler_arquivo(caminho)
+    nome = Path(caminho).stem
+    relativo = str(Path(caminho).relative_to(RAIZ))
+    pasta = Path(caminho).parent.name
+
+    resultado = {
+        "arquivo": nome,
+        "caminho": relativo,
+        "pbl": pasta,
+        "tipo": "Menu",
+        "janelas": [],
+    }
+
+    for m in re.finditer(r'Open(?:Sheet)?(?:WithParm|WithPop)?\s*\(\s*["\']?(\w+)', conteudo):
+        janela = m.group(1)
+        if janela not in resultado["janelas"]:
+            resultado["janelas"].append(janela)
+
+    return resultado
+
+
+def analisar_sra(caminho):
+    """Analisa um arquivo Application (.sra)."""
+    conteudo = ler_arquivo(caminho)
+    nome = Path(caminho).stem
+    relativo = str(Path(caminho).relative_to(RAIZ))
+    pasta = Path(caminho).parent.name
+
+    resultado = {
+        "arquivo": nome,
+        "caminho": relativo,
+        "pbl": pasta,
+        "tipo": "Application",
+        "janelas": [],
+    }
+
+    for m in re.finditer(r'Open(?:Sheet)?(?:WithParm|WithPop)?\s*\(\s*["\']?(\w+)', conteudo):
+        janela = m.group(1)
+        if janela not in resultado["janelas"]:
+            resultado["janelas"].append(janela)
+
+    return resultado
+
+
 def analisar_arquivo(caminho):
     """Roteia para o analisador correto baseado na extensão."""
     ext = Path(caminho).suffix.lower()
@@ -277,6 +387,10 @@ def analisar_arquivo(caminho):
         return analisar_srf(caminho)
     elif ext == ".sru":
         return analisar_sru(caminho)
+    elif ext == ".srm":
+        return analisar_srm(caminho)
+    elif ext == ".sra":
+        return analisar_sra(caminho)
     else:
         return {"arquivo": Path(caminho).stem, "tipo": f"Não suportado ({ext})"}
 
@@ -288,6 +402,13 @@ def formatar_saida(resultado):
     linhas.append(f"Tipo: {resultado['tipo']}")
     linhas.append(f"PBL: {resultado.get('pbl', '?')}")
     linhas.append(f"Caminho: {resultado.get('caminho', '?')}")
+    if resultado.get("menus"):
+        if len(resultado["menus"]) == 1:
+            linhas.append(f"Menu: {resultado['menus'][0]}")
+        else:
+            linhas.append("Menu:")
+            for m in resultado["menus"]:
+                linhas.append(f"  - {m}")
     linhas.append("")
 
     if resultado["tipo"] == "Window":
@@ -336,6 +457,14 @@ def formatar_saida(resultado):
             linhas.append(f"DataWindows: {', '.join(resultado['datawindows'])}")
         if resultado["sql"]:
             linhas.append(f"Tabelas SQL: {', '.join(resultado['sql'])}")
+
+    elif resultado["tipo"] == "Menu":
+        if resultado.get("janelas"):
+            linhas.append(f"Janelas que abre ({len(resultado['janelas'])} total): {', '.join(resultado['janelas'][:20])}")
+
+    elif resultado["tipo"] == "Application":
+        if resultado.get("janelas"):
+            linhas.append(f"Janelas que abre: {', '.join(resultado['janelas'])}")
 
     return "\n".join(linhas)
 

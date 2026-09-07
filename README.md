@@ -27,10 +27,12 @@ volta para `.pbl`.
 ## 1. O que cada pasta faz
 
 ```
-C:\Users\Elton\Desktop\LazarusIA\
+LazarusIA\
 │
 ├── extrair.bat           ⭐ ATALHOS (duplo clique)
 ├── compilar.bat              extrair / compilar / validar / analise / origem
+├── compilar_patch.bat        compila apenas alterados/novos em patch.pbl
+├── integridade.bat           verifica integridade e encoding (CP1252)
 ├── validar.bat
 ├── analise.bat
 ├── origem.bat
@@ -69,7 +71,7 @@ C:\Users\Elton\Desktop\LazarusIA\
 ## 2. O que cada campo do config.json significa
 
 Este é o arquivo que você edita. Ele fica na **raiz** do projeto:
-`C:\Users\Elton\Desktop\LazarusIA\config.json`.
+`config.json`.
 
 > **Conceito importante:** os `.pbl` listados no config vivem no servidor/disco
 > de origem (`G:\sdo\programa`). Eles são **somente leitura** para este
@@ -109,19 +111,18 @@ Este é o arquivo que você edita. Ele fica na **raiz** do projeto:
 ## 4. Como configurar (passo a passo)
 
 ### Passo 4.1 — Abra o config.json
-Abra `C:\Users\Elton\Desktop\LazarusIA\config.json` no Bloco de Notas.
+Abra `config.json` (na raiz do projeto) no seu editor.
 
 ### Passo 4.2 — Liste as bibliotecas que você quer processar
-Em `"pbls"`, coloque o caminho completo de CADA `.pbl` que você quer
-extrair e recriar. Separe por vírgula. Use o caminho do **original**
-(na `origem`, ex.: `G:\sdo\programa`) — ele é lido, não modificado.
+Em `"pbls"`, coloque o nome ou caminho de CADA `.pbl` que você quer
+extrair e recriar. Separe por vírgula.
 
-Exemplo para processar `deivide.pbl` e `elton.pbl`:
+Exemplo para processar `deivide.pbl` e `sdo01.pbl`:
 
 ```json
 "pbls": [
-  "G:\\sdo\\programa\\deivide.pbl",
-  "G:\\sdo\\programa\\elton.pbl"
+  "deivide.pbl",
+  "sdo01.pbl"
 ],
 ```
 
@@ -180,21 +181,21 @@ Extrai o código-fonte dos `.pbl` da lista `pbls` para `codigo_fonte\<pbl>\`.
 > Os comandos abaixo usam caminhos completos — rode de **qualquer pasta**, sem
 > precisar de `cd`. (Isso vale para todas as seções deste guia.)
 
-### Opção A — Linha de comando (usa o config.json)
-Abra o Prompt de Comando (cmd) e rode:
+### Opção A — Linha de comando ou dois cliques
+Dê dois cliques em `extrair.bat` ou rode pelo terminal:
 
 ```bat
-python "C:\Users\Elton\Desktop\LazarusIA\scripts\extrair.py"
+extrair.bat
 ```
 
-### Opção B — Informar o caminho direto (sem editar config.json)
+### Opção B — Informar o PBL diretamente (sem editar config.json)
 ```bat
-python "C:\Users\Elton\Desktop\LazarusIA\scripts\extrair.py" "G:\sdo\programa\elton.pbl"
+extrair.bat deivide.pbl
 ```
 
-> Atalho: como o `config.json` já tem a `"origem"`, basta o **nome** do PBL:
+> Atalho: como o `config.json` já tem a `"origem"`, basta o **nome** simples do PBL:
 > ```bat
-> python "C:\Users\Elton\Desktop\LazarusIA\scripts\extrair.py" elton
+> extrair.bat deivide
 > ```
 > O nome é resolvido contra a `"origem"` (com ou sem `.pbl`). Caminho completo
 > também funciona.
@@ -209,18 +210,18 @@ gerando falsos positivos no `compilar.py` e no `validar.py`.
 Para **desativar** a limpeza (manter comportamento anterior), use `--nao-limpar`:
 
 ```bat
-"C:\Users\Elton\Desktop\LazarusIA\extrair.bat" --nao-limpar deivide
+extrair.bat --nao-limpar deivide
 ```
 
 > Arquivos que não são `.sr*` (`.txt`, `.md`, notas) não são afetados pela limpeza.
 
 ### Resultado esperado
 ```
-    Limpando 3 .sr* antigo(s) em C:\...\codigo_fonte\deivide
+    Limpando 3 .sr* antigo(s) em codigo_fonte\deivide
       - w_tab_oso_pref.srw
       - d_tab_obo_antigo.srd
       - f_unused.srf
-==> Extraindo [G:\sdo\programa\deivide.pbl] -> C:\Users\Elton\Desktop\LazarusIA\codigo_fonte\deivide
+==> Extraindo [G:\sdo\programa\deivide.pbl] -> codigo_fonte\deivide
     Objetos de fonte extraidos: 20
 Extracao concluida: 20 objeto(s) em 1 PBL(s).
 ```
@@ -303,7 +304,7 @@ Antes de importar cada objeto, o `compilar.py` roda `checar_fontes.py`, que
 
 ### Resultado esperado
 ```
-==> Criando biblioteca C:\Users\Elton\Desktop\LazarusIA\compilacao\deivide.pbl (rc=0)
+==> Criando biblioteca compilacao\deivide.pbl (rc=0)
   OK  f_converte_min_duracao.srf
   OK  d_ope_his_eqp_hec.srd
   ...
@@ -326,6 +327,8 @@ Lazarus IA. Eles são a porta de entrada dos fluxos do pipeline:
 |---|---|---|
 | `extrair.bat` | Extrai os `.sr*` para `codigo_fonte\` | [seção 5](#5-como-extrair) |
 | `compilar.bat` | Recria os `.pbl` em `compilacao\` | [seção 6](#6-como-compilar-recriar-o-pbl) |
+| `compilar_patch.bat` | Compila somente objetos alterados/novos em `patch.pbl` | Compilação incremental |
+| `integridade.bat` | Verifica integridade e encoding (CP1252 / Git) | Proteção preventiva |
 | `validar.bat` | Compara o `.pbl` recriado com a fonte | [seção 9](#9-como-validar-que-nada-quebrou) |
 | `analise.bat` | Mapeia dependências e busca conteúdo nos `.sr*` | [seção 12](#12-como-analisar-dependências-analise) |
 | `origem.bat` | Mapa de correspondência: onde cada objeto da origem existe | [seção 13](#13-mapa-de-correspondência-entre-pbls-origem) |
@@ -334,7 +337,7 @@ Lazarus IA. Eles são a porta de entrada dos fluxos do pipeline:
 
 1. Duplo clique em `extrair.bat` → atualiza os fontes.
 2. IA edita os arquivos em `codigo_fonte\<pbl>\`.
-3. Duplo clique em `compilar.bat` → gera o `.pbl` novo.
+3. Duplo clique em `compilar.bat` (ou `compilar_patch.bat`) → gera o `.pbl` novo.
 4. Duplo clique em `validar.bat` → confirma que o round-trip preservou tudo.
 5. Copie `compilacao\<pbl>.pbl` para o lugar do original.
 
@@ -345,8 +348,8 @@ Lazarus IA. Eles são a porta de entrada dos fluxos do pipeline:
 `extrair` e `compilar` aceitam nomes ou caminhos para processar só alguns PBLs:
 
 ```bat
-"C:\Users\Elton\Desktop\LazarusIA\extrair.bat"  elton
-"C:\Users\Elton\Desktop\LazarusIA\compilar.bat" elton
+extrair.bat  sdo01
+compilar.bat sdo01
 ```
 
 > No `extrair`, o nome é resolvido contra a `"origem"` do config.json.
@@ -354,7 +357,7 @@ Lazarus IA. Eles são a porta de entrada dos fluxos do pipeline:
 >
 > Para extrair **sem** limpar órfãos anteriores:
 > ```bat
-> "C:\Users\Elton\Desktop\LazarusIA\extrair.bat" --nao-limpar deivide
+> extrair.bat --nao-limpar deivide
 > ```
 
 > `extrair.bat` só **lê** as `.pbl` originais. `compilar.bat` só **escreve** em
@@ -369,7 +372,7 @@ Dê dois cliques em `extrair.bat` (ou rode a seção 5).
 
 ### Passo 2 — Crie o repositório Git (uma vez)
 ```bat
-cd C:\Users\Elton\Desktop\LazarusIA\codigo_fonte
+cd codigo_fonte
 git init
 git add .
 git commit -m "base extraida"
@@ -380,10 +383,11 @@ git commit -m "base extraida"
 ### Passo 3 — Peça para a IA editar
 A IA edita os arquivos `.sr*` dentro de `codigo_fonte\<pbl>\`.
 Eles são texto puro — o mesmo conteúdo que você vê no EditSource do PowerBuilder.
+Utilize o **LazarusCode** (`lazaruscode.exe`) como agente do OpenCode, pois ele suporta nativamente a codificação **CP1252**.
 
 ### Passo 4 — Veja o que mudou
 ```bat
-git -C C:\Users\Elton\Desktop\LazarusIA\codigo_fonte diff
+git -C codigo_fonte diff
 ```
 
 ### Passo 5 — Recompile após a edição
@@ -391,7 +395,7 @@ Dê dois cliques em `compilar.bat` (ou rode a seção 6).
 
 ### Passo 6 — Commit da alteração
 ```bat
-cd C:\Users\Elton\Desktop\LazarusIA\codigo_fonte
+cd codigo_fonte
 git add .
 git commit -m "ajuste da janela w_ope_hec"
 ```
@@ -420,10 +424,10 @@ código**: nada quebrou.
 O que aquele comando fazia, passo a passo:
 
 ```bat
-cd C:\Users\Elton\AppData\Local\Temp
+cd %TEMP%
 mkdir verificacao
 cd verificacao
-"C:\Users\Elton\Desktop\LazarusIA\scripts\pbldump\PblDump.exe" -es "C:\Users\Elton\Desktop\LazarusIA\compilacao\deivide.pbl" *.*
+scripts\pbldump\PblDump.exe -es ..\compilacao\deivide.pbl *.*
 ```
 
 1. `cd`/`mkdir`/`cd` — cria uma pasta vazia de trabalho em `Temp`.

@@ -7,17 +7,16 @@ com o mesmo mecanismo do Library Painter do PowerBuilder.
 IMPORTANTE: este script precisa do Python 32-bit para carregar pborc90.dll
 (32 bits). Use o caminho completo do python32\python.exe.
 
-Uso (o script deve ser chamado com o caminho COMPLETO, de qualquer pasta;
-nao funciona rodar de outra pasta sem o caminho):
+Uso (chame via compilar.bat ou python):
 
-    "C:\Users\Elton\Desktop\LazarusIA\scripts\python32\python.exe" "C:\Users\Elton\Desktop\LazarusIA\scripts\compilar.py"
+    compilar.bat
         # Sem argumentos: compila os PBLs da lista "pbls" do config.json (raiz).
 
-    ...\python32\python.exe ...\scripts\compilar.py "F:\sdo\programa\deivide.pbl"
+    compilar.bat deivide
         # Compila APENAS este PBL (a origem e a pasta codigo_fonte\deivide).
 
-    ...\python32\python.exe ...\scripts\compilar.py "F:\sdo\programa\a.pbl" "F:\sdo\programa\b.pbl"
-        # Compila apenas estes dois, ignorando o config.json.
+    compilar.bat w_rel_vinc_frota_soltura.srw
+        # Compila ou atualiza apenas este objeto especifico.
 
 ATENCAO: a origem dos objetos eh SEMPRE a pasta codigo_fonte\<nome do pbl>.
 O script NAO varre a pasta codigo_fonte por conta propria: quem define o que
@@ -30,6 +29,7 @@ Saida:
 """
 import ctypes
 import os
+import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -188,7 +188,7 @@ def extrair_comentario(sintaxe):
     return b''
 
 
-def compilar_pbl(sess, pbl, lib_list, app_name, app_lib):
+def compilar_pbl(sess, pbl, lib_list, app_name, app_lib, arquivo_unico=None):
     nome = os.path.splitext(os.path.basename(pbl))[0]
     dir_src = os.path.join(CODIGO_FONTE, nome)
     out_pbl = os.path.join(COMPILACAO, nome + '.pbl')
@@ -201,19 +201,29 @@ def compilar_pbl(sess, pbl, lib_list, app_name, app_lib):
         print('   Rode antes o extrair.py para este PBL.')
         return 1
 
-    with open(log, 'w', encoding='utf-8') as lf:
+    cfg = comum.carregar_config()
+    pbl_origem = comum.resolver(pbl, cfg.get('origem', ''))
+
+    modo_abertura = 'a' if arquivo_unico and os.path.isfile(out_pbl) else 'w'
+    with open(log, modo_abertura, encoding='utf-8') as lf:
         lf.write('Log de importacao de %s  [%s]\n' % (pbl, agora()))
 
-        rc = sess.criar_biblioteca(out_pbl)
-        lf.write('Criar biblioteca %s -> rc=%d\n' % (out_pbl, rc))
-        print('==> Criando biblioteca %s (rc=%d)' % (out_pbl, rc))
+        if arquivo_unico and os.path.isfile(out_pbl):
+            print('==> Atualizando objeto no PBL existente: %s' % out_pbl)
+            lf.write('Atualizando objeto no PBL existente %s\n' % out_pbl)
+        elif arquivo_unico and os.path.isfile(pbl_origem):
+            shutil.copy2(pbl_origem, out_pbl)
+            print('==> Copiando base da origem %s -> %s' % (pbl_origem, out_pbl))
+            lf.write('Copiada base da origem %s -> %s\n' % (pbl_origem, out_pbl))
+        else:
+            rc = sess.criar_biblioteca(out_pbl)
+            lf.write('Criar biblioteca %s -> rc=%d\n' % (out_pbl, rc))
+            print('==> Criando biblioteca %s (rc=%d)' % (out_pbl, rc))
 
         libs = []
-        for lib in [out_pbl, pbl] + lib_list:
+        for lib in [out_pbl, pbl_origem, pbl] + lib_list:
             if os.path.isfile(lib) and lib not in libs:
                 libs.append(lib)
-        if os.path.isfile(pbl) and pbl not in libs:
-            libs.insert(1, pbl)
         rc = sess.set_library_list(libs)
         lf.write('Library list (%d) -> rc=%d\n' % (len(libs), rc))
         if rc != OK:
@@ -232,7 +242,12 @@ def compilar_pbl(sess, pbl, lib_list, app_name, app_lib):
             print('   O ORCA exige um application; defina app_name/app_lib.')
             return 1
 
-        pendentes = arquivos_fonte(dir_src)
+        if arquivo_unico:
+            pendentes = [arquivo_unico]
+            print('  -> Compilando objeto unico:', os.path.basename(arquivo_unico))
+        else:
+            pendentes = arquivos_fonte(dir_src)
+
         ok, falhas = [], []
         for tentativa in range(6):
             if not pendentes:
@@ -296,33 +311,95 @@ def compilar_pbl(sess, pbl, lib_list, app_name, app_lib):
         return 0 if not pendentes else 2
 
 
+def resolver_argumentos(args):
+    r"""Interpreta os argumentos passados na linha de comando.
+
+    Pode receber:
+      - Vazio: todas as pbls do config.json
+      - Nome de PBL: 'deivide' ou 'deivide.pbl'
+      - Arquivo fonte individual: 'deivide\w_rel_vinc_frota_soltura.srw' ou 'w_rel_vinc_frota_soltura.srw'
+    Retorna lista de tuplas: (pbl_nome, arquivo_especifico_ou_none)
+    """
+    cfg = comum.carregar_config()
+    if not args:
+        return [(os.path.basename(p), None) for p in cfg.get('pbls', [])]
+
+    resultado = []
+    for a in args:
+        a_limpo = a.replace('/', os.sep)
+        ext = os.path.splitext(a_limpo)[1].lower()
+        if ext in TIPO:
+            # E um arquivo fonte individual!
+            # Pode ser 'codigo_fonte\deivide\w_teste.srw', 'deivide\w_teste.srw' ou apenas 'w_teste.srw'
+            candidatos = []
+            if os.path.isfile(a_limpo):
+                candidatos.append(os.path.abspath(a_limpo))
+            elif os.path.isfile(os.path.join(CODIGO_FONTE, a_limpo)):
+                candidatos.append(os.path.join(CODIGO_FONTE, a_limpo))
+            else:
+                # Procura pelo nome do arquivo em todas as subpastas de codigo_fonte
+                nome_base = os.path.basename(a_limpo)
+                for raiz, _, files in os.walk(CODIGO_FONTE):
+                    if nome_base in files:
+                        candidatos.append(os.path.join(raiz, nome_base))
+
+            if not candidatos:
+                print('AVISO: Arquivo fonte nao encontrado:', a)
+                continue
+
+            arq_caminho = candidatos[0]
+            rel = os.path.relpath(arq_caminho, CODIGO_FONTE)
+            partes = rel.split(os.sep)
+            pbl_nome = partes[0] + '.pbl'
+            resultado.append((pbl_nome, arq_caminho))
+        else:
+            pbl_nome = a if a.lower().endswith('.pbl') else a + '.pbl'
+            resultado.append((pbl_nome, None))
+
+    return resultado
+
+
+def coletar_arquivos_das_tarefas(tarefas):
+    alvos = []
+    for pbl_nome, arq_especifico in tarefas:
+        if arq_especifico:
+            if arq_especifico not in alvos:
+                alvos.append(arq_especifico)
+        else:
+            pasta_pbl = os.path.join(CODIGO_FONTE, os.path.splitext(pbl_nome)[0])
+            if os.path.isdir(pasta_pbl):
+                for f in arquivos_fonte(pasta_pbl):
+                    if f not in alvos:
+                        alvos.append(f)
+    return alvos
+
+
 def main():
     argv = [a for a in sys.argv[1:]
             if a not in ('--ignorar-checagem', '--ignorar-checagem-fontes')]
-    pular_checagem = len(argv) != len(sys.argv) - 1
-    pbls, lib_list, app_name, app_lib, orca_dll = carregar_config(argv)
+    pular_checagem = len(argv) != len(sys.argv)
 
-    import checar_fontes
+    cfg = comum.carregar_config()
+    orca_dll = cfg.get('orca_dll', DLL_PADRAO)
+    lib_list = cfg.get('lib_list', [])
+    app_name = cfg.get('app_name', '')
+    app_lib = cfg.get('app_lib', '')
+
+    tarefas = resolver_argumentos(argv)
+    if not tarefas:
+        print('Nenhum PBL ou arquivo informado para compilar.')
+        return 1
+
+    alvos_arquivos = coletar_arquivos_das_tarefas(tarefas)
+
+    import integridade_fontes
     if not pular_checagem:
-        print('== Checando integridade dos fontes (encoding/acentos)...')
-        erros, _ = checar_fontes.verificar(
-            [os.path.basename(p) for p in pbls])
-        if erros:
-            print('')
-            print('!! COMPILACAO BLOQUEADA: fontes com possivel perda de')
-            print('   acentos/encoding. Corrija os pontos acima ou, se for')
-            print('   falso positivo, rode com --ignorar-checagem.')
+        print('== Checando integridade e encoding (CP1252 / Git)...')
+        ok = integridade_fontes.processar_integridade(alvos_arquivos, interativo=True)
+        if not ok:
+            print('\n!! COMPILACAO ABORTADA.')
             return 1
 
-    invalidos = [p for p in pbls
-                 if not (os.path.isfile(p) or comum.eh_nome_simples(p))]
-    if invalidos:
-        print('AVISO: caminho nao encontrado, ignorado:', ', '.join(invalidos))
-    pbls = [p for p in pbls
-            if os.path.isfile(p) or comum.eh_nome_simples(p)]
-    if not pbls:
-        print('Nenhum PBL informado. Edite config.json ou passe nomes/caminhos.')
-        return 1
     if not os.path.isfile(orca_dll):
         print('ERRO: pborc90.dll nao encontrado em', orca_dll)
         return 1
@@ -331,9 +408,10 @@ def main():
     if not sess.abrir():
         print('ERRO: nao foi possivel abrir sessao ORCA.')
         return 1
+
     try:
-        for pbl in pbls:
-            compilar_pbl(sess, pbl, lib_list, app_name, app_lib)
+        for pbl_nome, arq_especifico in tarefas:
+            compilar_pbl(sess, pbl_nome, lib_list, app_name, app_lib, arquivo_unico=arq_especifico)
     finally:
         sess.fechar()
     return 0
@@ -341,3 +419,4 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+

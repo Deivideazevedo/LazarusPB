@@ -94,7 +94,7 @@ def importar_patch(sess, itens, cfg, lf):
     lf.write('Library list (%d) -> rc=%d\n' % (len(libs), rc))
     if rc != OK:
         print('!! Falha ao definir library list (rc=%d)' % rc)
-        return [], [i[0] for i in itens]
+        return [], list(itens)
 
     app_name = cfg.get('app_name', '')
     app_lib = cfg.get('app_lib', '')
@@ -104,10 +104,10 @@ def importar_patch(sess, itens, cfg, lf):
                  % (app_name, app_lib, rc))
         if rc != OK:
             print('!! Falha ao definir application atual (rc=%d)' % rc)
-            return [], [i[0] for i in itens]
+            return [], list(itens)
     else:
         print('!! ATENCAO: app_name/app_lib invalidos no config.json.')
-        return [], [i[0] for i in itens]
+        return [], list(itens)
 
     ok, falhas = [], []
     pendentes = list(itens)
@@ -158,7 +158,7 @@ def importar_patch(sess, itens, cfg, lf):
         if pendentes:
             print('    retentando %d objeto(s)...' % len(pendentes))
 
-    return ok, [a[0] for a in pendentes]
+    return ok, pendentes
 
 
 def main():
@@ -193,10 +193,19 @@ def main():
               'Nada a compilar.')
         return 0
 
-    itens = [(a,) for a in alterados]
+    itens = alterados
     print('\nObjetos alterados/novos desde a ultima extracao: %d' % len(itens))
-    for (a,) in itens:
+    for a in itens:
         print('    *', os.path.relpath(a, comum.CODIGO_FONTE))
+
+    import integridade_fontes
+    pular_checagem = '--ignorar-checagem' in sys.argv
+    if not pular_checagem:
+        print('== Checando integridade e encoding dos alterados (CP1252 / Git)...')
+        ok = integridade_fontes.processar_integridade(itens, interativo=True)
+        if not ok:
+            print('\n!! COMPILACAO DO PATCH ABORTADA.')
+            return 1
 
     sess = OrcaSession(orca_dll)
     if not sess.abrir():

@@ -2,12 +2,12 @@
 r"""Lazarus IA - Extrator de PBLs
 Extrai o codigo-fonte (.sr*) de bibliotecas PowerBuilder (.pbl) usando PblDump.
 
-Uso (chame sempre com o caminho completo, de qualquer pasta):
+Uso (chame via extrair.bat ou python):
 
-    "C:\Users\Elton\Desktop\LazarusIA\scripts\python32\python.exe" "C:\Users\Elton\Desktop\LazarusIA\scripts\extrair.py"
+    extrair.bat
         # Sem argumentos: extrai os PBLs da lista "pbls" do config.json (raiz).
 
-    ...\extrair.py "F:\sdo\programa\elton.pbl"
+    extrair.bat deivide.pbl
         # Extrai tambem/apenas este PBL informado na linha de comando.
 
     ...\extrair.py --nao-limpar deivide

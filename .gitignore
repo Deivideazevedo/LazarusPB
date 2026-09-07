@@ -11,3 +11,6 @@ scripts/hashes.json
 # Logs e cache Python
 logs/
 __pycache__/
+
+# Fork e builds do OpenCode
+opencode/
