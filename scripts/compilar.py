@@ -404,16 +404,15 @@ def main():
         print('ERRO: pborc90.dll nao encontrado em', orca_dll)
         return 1
 
-    sess = OrcaSession(orca_dll)
-    if not sess.abrir():
-        print('ERRO: nao foi possivel abrir sessao ORCA.')
-        return 1
-
-    try:
-        for pbl_nome, arq_especifico in tarefas:
+    for pbl_nome, arq_especifico in tarefas:
+        sess = OrcaSession(orca_dll)
+        if not sess.abrir():
+            print('ERRO: nao foi possivel abrir sessao ORCA para %s.' % pbl_nome)
+            continue
+        try:
             compilar_pbl(sess, pbl_nome, lib_list, app_name, app_lib, arquivo_unico=arq_especifico)
-    finally:
-        sess.fechar()
+        finally:
+            sess.fechar()
     return 0
 
 

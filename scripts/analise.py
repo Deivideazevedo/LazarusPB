@@ -118,6 +118,56 @@ def obter_mapa_menus():
     return _MAPA_MENUS_CACHE
 
 
+_MAPA_DW_USOS_CACHE = None
+
+
+def obter_mapa_dw_usos():
+    """Varre todos os arquivos .srw, .sru e .srd e mapeia:
+    datawindow_lower -> {'janelas': [...], 'objetos': [...], 'datawindows': [...]}"""
+    global _MAPA_DW_USOS_CACHE
+    if _MAPA_DW_USOS_CACHE is not None:
+        return _MAPA_DW_USOS_CACHE
+
+    mapa = {}
+
+    def registrar(dw_nome, item_nome, chave):
+        if not dw_nome:
+            return
+        dw_key = dw_nome.strip().lower()
+        if dw_key not in mapa:
+            mapa[dw_key] = {"janelas": [], "objetos": [], "datawindows": []}
+        if item_nome not in mapa[dw_key][chave]:
+            mapa[dw_key][chave].append(item_nome)
+
+    padrao_dw = re.compile(r'(?:[Dd]ata[Oo]bject|is_nm_dataobject)\s*=\s*["\'](\w+)["\']')
+    padrao_report = re.compile(r'report\([^)]*dataobject\s*=\s*["\'](\w+)["\']', re.IGNORECASE)
+
+    for arq in RAIZ.rglob("*"):
+        if ".git" in arq.parts or not arq.is_file():
+            continue
+        ext = arq.suffix.lower()
+        if ext not in (".srw", ".sru", ".srd"):
+            continue
+
+        conteudo = ler_arquivo(arq)
+        if not conteudo or conteudo.startswith("ERRO:"):
+            continue
+
+        nome = arq.stem
+        if ext == ".srw":
+            for m in padrao_dw.finditer(conteudo):
+                registrar(m.group(1), nome, "janelas")
+        elif ext == ".sru":
+            for m in padrao_dw.finditer(conteudo):
+                registrar(m.group(1), nome, "objetos")
+        elif ext == ".srd":
+            for m in padrao_report.finditer(conteudo):
+                registrar(m.group(1), nome, "datawindows")
+
+    _MAPA_DW_USOS_CACHE = mapa
+    return _MAPA_DW_USOS_CACHE
+
+
 def ler_arquivo(caminho):
     """Lê arquivo com encoding cp1252 (padrão PowerBuilder)."""
     try:
@@ -198,11 +248,15 @@ def analisar_srd(caminho):
     relativo = str(Path(caminho).relative_to(RAIZ))
     pasta = Path(caminho).parent.name
 
+    usos = obter_mapa_dw_usos().get(nome.lower(), {})
     resultado = {
         "arquivo": nome,
         "caminho": relativo,
         "pbl": pasta,
         "tipo": "DataWindow",
+        "janelas": usos.get("janelas", []),
+        "objetos": usos.get("objetos", []),
+        "datawindows": usos.get("datawindows", []),
         "tabelas": [],
         "colunas": [],
         "procedures": [],
@@ -428,6 +482,12 @@ def formatar_saida(resultado):
             linhas.append(f"Tabelas SQL: {', '.join(resultado['sql'])}")
 
     elif resultado["tipo"] == "DataWindow":
+        if resultado.get("janelas"):
+            linhas.append(f"Usada nas janelas: {', '.join(resultado['janelas'])}")
+        if resultado.get("objetos"):
+            linhas.append(f"Usada nos objetos: {', '.join(resultado['objetos'])}")
+        if resultado.get("datawindows"):
+            linhas.append(f"Usada em DataWindows (sub-reports): {', '.join(resultado['datawindows'])}")
         if resultado["tabelas"]:
             linhas.append(f"Tabelas: {', '.join(resultado['tabelas'])}")
         if resultado["colunas"]:
